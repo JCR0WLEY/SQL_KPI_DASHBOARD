@@ -1,0 +1,733 @@
+SQL for Key Performance Indicators (KPIs) and Metric Dashboard
+
+Financial Metrics
+
+1. Monthly Recurring Revenue (MRR) - Total revenue generated from subscription services each month. $
+
+SELECT
+    DATE_TRUNC('month', subscription_start_date) AS month,
+    SUM(monthly_revenue) AS total_mrr
+FROM
+    subscriptions
+WHERE
+    subscription_status = 'active'
+GROUP BY
+    month
+ORDER BY
+    month DESC;
+
+2. Annual Recurring Revenue (ARR) - Total revenue generated from subscription services annually. $
+
+SELECT
+    DATE_TRUNC('year', subscription_start_date) AS year,
+    SUM(annual_revenue) AS total_arr
+FROM
+    subscriptions
+WHERE
+    subscription_status = 'active'
+GROUP BY
+    year
+ORDER BY
+    year DESC;
+
+3. Customer Acquisition Cost (CAC) - Cost associated with acquiring a new customer.
+This example assumes you have a marketing_expenses table and a customer_acquisition table.
+
+SELECT
+    SUM(marketing_cost) / COUNT(DISTINCT customer_id) AS cac
+FROM
+    marketing_expenses
+JOIN
+    customer_acquisition ON marketing_expenses.campaign_id = customer_acquisition.campaign_id
+WHERE
+    acquisition_date >= DATE_TRUNC('year', CURRENT_DATE) -- Adjust as needed
+
+
+4. Customer Lifetime Value (CLV) - Total revenue expected from a customer over their lifetime. $
+This example assumes you have transactions and customers tables.
+
+WITH customer_lifetime AS (
+    SELECT
+        customer_id,
+        SUM(revenue) AS total_revenue,
+        DATEDIFF(month, MIN(subscription_start_date), MAX(subscription_end_date)) AS customer_lifetime_months
+    FROM
+        transactions
+    GROUP BY
+        customer_id
+),
+average_lifetime AS (
+    SELECT
+        AVG(customer_lifetime_months) AS avg_lifetime_months
+    FROM
+        customer_lifetime
+),
+average_revenue_per_customer AS (
+    SELECT
+        AVG(total_revenue / customer_lifetime_months) AS avg_revenue_per_month
+    FROM
+        customer_lifetime
+)
+SELECT
+    avg_revenue_per_month * avg_lifetime_months AS clv
+FROM
+    average_revenue_per_customer, average_lifetime;
+
+5. Gross Margin - Revenue minus the cost of goods sold (COGS), divided by revenue. $
+
+SELECT
+    (SUM(revenue) - SUM(cogs)) / SUM(revenue) * 100 AS gross_margin_percentage
+FROM
+    transactions
+WHERE
+    transaction_date BETWEEN DATE_TRUNC('year', CURRENT_DATE) AND CURRENT_DATE;
+
+Operational Metrics
+
+1. User Adoption Rate - Percentage of new users actively using the platform after a specified period.
+
+WITH new_users AS (
+    SELECT
+        user_id,
+        MIN(signup_date) AS signup_date
+    FROM
+        users
+    WHERE
+        signup_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') -- Adjust as needed
+    GROUP BY
+        user_id
+),
+active_users AS (
+    SELECT
+        user_id
+    FROM
+        user_activity
+    WHERE
+        activity_date BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND CURRENT_DATE -- Adjust period
+    GROUP BY
+        user_id
+),
+adopted_users AS (
+    SELEC
+
+2. System Uptime - Percentage of time the SaaS application is operational and accessible.
+
+WITH uptime_logs AS (
+    SELECT
+        MIN(timestamp) AS start_time,
+        MAX(timestamp) AS end_time
+    FROM
+        system_status_logs
+    WHERE
+        status = 'up'
+    GROUP BY
+        DATE_TRUNC('day', timestamp) -- Assuming daily logs; adjust as needed
+),
+total_time AS (
+    SELECT
+        SUM(EXTRACT(EPOCH FROM (end_time - start_time))) AS uptime_seconds
+    FROM
+        uptime_logs
+),
+total_period AS (
+    SELECT
+        EXTRACT(EPOCH FROM (MAX(timestamp) - MIN(timestamp))) AS total_seconds
+    FROM
+        system_status_logs
+    WHERE
+        timestamp BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND CURRENT_DATE -- Adjust period
+)
+SELECT
+    (uptime_seconds / total_seconds) * 100 AS uptime_percentage
+FROM
+    total_time, total_period;
+
+3. Feature Utilization Rate - Percentage of users engaging with specific features.
+
+WITH feature_usage AS (
+    SELECT
+        feature_id,
+        COUNT(DISTINCT user_id) AS users_using_feature
+    FROM
+        feature_usage_logs
+    GROUP BY
+        feature_id
+),
+total_users AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS total_users
+    FROM
+        users
+)
+SELECT
+    fu.feature_id,
+    (users_using_feature * 1.0 / total_users) * 100 AS feature_utilization_rate
+FROM
+    feature_usage fu, total_users;
+
+4. Average Response Time - Average time taken to respond to customer inquiries or support requests.
+
+SELECT
+    AVG(EXTRACT(EPOCH FROM (response_time - request_time)) / 60) AS average_response_time_minutes
+FROM
+    support_requests
+WHERE
+    response_time IS NOT NULL
+    AND request_time BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND CURRENT_DATE; -- Adjust period
+
+5. Onboarding Completion Rate - Percentage of new users who complete the onboarding process.
+
+WITH onboarding_started AS (
+    SELECT
+        user_id
+    FROM
+        onboarding_logs
+    WHERE
+        status = 'started'
+),
+onboarding_completed AS (
+    SELECT
+        user_id
+    FROM
+        onboarding_logs
+    WHERE
+        status = 'completed'
+),
+total_onboarded AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS onboarded_count
+    FROM
+        onboarding_completed
+),
+total_started AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS started_count
+    FROM
+        onboarding_started
+)
+SELECT
+    (onboarded_count * 1.0 / started_count) * 100 AS onboarding_completion_rate
+FROM
+    total_onboarded, total_started;
+
+Customer Metrics
+
+1. Net Promoter Score (NPS) is calculated based on survey responses that categorize customers into Promoters, Passives, and Detractors. Assuming you have a nps_survey table with customer_id and nps_score (typically on a scale from 0 to 10), here’s how you can calculate NPS:
+
+WITH scores AS (
+    SELECT
+        CASE
+            WHEN nps_score BETWEEN 9 AND 10 THEN 'Promoter'
+            WHEN nps_score BETWEEN 7 AND 8 THEN 'Passive'
+            ELSE 'Detractor'
+        END AS score_category
+    FROM
+        nps_survey
+),
+nps_counts AS (
+    SELECT
+        score_category,
+        COUNT(*) AS count
+    FROM
+        scores
+    GROUP BY
+        score_category
+),
+total_respondents AS (
+    SELECT
+        COUNT(*) AS total_count
+    FROM
+        nps_survey
+)
+SELECT
+    ((COALESCE(promoter_count, 0) * 1.0 / total_count) - (COALESCE(detractor_count, 0) * 1.0 / total_count)) * 100 AS nps
+FROM
+    nps_counts
+    CROSS JOIN total_respondents
+    LEFT JOIN (SELECT count AS promoter_count FROM nps_counts WHERE score_category = 'Promoter') pc ON true
+    LEFT JOIN (SELECT count AS detractor_count FROM nps_counts WHERE score_category = 'Detra
+
+2. Customer Satisfaction Score (CSAT) - Rating given by customers about their satisfaction with the service. Assuming you have a csat_survey table with customer_id and rating:
+
+SELECT AVG(rating) AS average_csat FROM csat_survey WHERE survey_date BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND CURRENT_DATE; -- Adjust period
+3. Customer Retention Rate - Percentage of customers who continue using the service over time.
+
+4. Average Revenue Per User (ARPU) - Average revenue generated per user. $
+
+Assuming you have a subscriptions table with customer_id, subscription_start_date, and subscription_end_date:
+WITH customers_active_at_start AS (
+    SELECT
+        customer_id
+    FROM
+        subscriptions
+    WHERE
+        subscription_start_date <= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+        AND (subscription_end_date IS NULL OR subscription_end_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month'))
+),
+customers_active_at_end AS (
+    SELECT
+        customer_id
+    FROM
+        subscriptions
+    WHERE
+        subscription_start_date <= CURRENT_DATE
+        AND (subscription_end_date IS NULL OR subscription_end_date >= CURRENT_DATE)
+)
+SELECT
+    (COUNT(DISTINCT active_at_end.customer_id) * 1.0 / COUNT(DISTINCT active_at_start.customer_id)) * 100 AS retention_rate
+FROM
+    customers_active_at_start active_at_start
+LEFT JOIN
+    customers_active_at_end active_at_end ON active_at_start.customer_id = active_at_end.customer_id;
+
+Product Metrics
+
+1. Bug/Error Rate - Frequency of bugs or errors reported by users.
+Assuming you have a bug_reports table with report_date and status columns, you can calculate the frequency of bugs/errors reported:
+
+WITH bug_counts AS (
+    SELECT
+        DATE_TRUNC('month', report_date) AS month,
+        COUNT(*) AS bug_count
+    FROM
+        bug_reports
+    WHERE
+        status = 'reported' -- Adjust status based on your schema
+    GROUP BY
+        month
+),
+total_interactions AS (
+    SELECT
+        DATE_TRUNC('month', interaction_date) AS month,
+        COUNT(DISTINCT user_id) AS user_count
+    FROM
+        user_interactions
+    GROUP BY
+        month
+)
+SELECT
+    b.month,
+    b.bug_count,
+    (b.bug_count * 1.0 / COALESCE(t.user_count, 1)) AS bug_rate -- To avoid division by zero
+FROM
+    bug_counts b
+LEFT JOIN
+    total_interactions t ON b.month = t.month
+ORDER BY
+    b.month DESC;
+
+2. Feature Request Volume - Number of feature requests submitted by users.
+Assuming you have data from a feature_requests table with request_date and status columns.
+
+SELECT
+    DATE_TRUNC('month', request_date) AS month,
+    COUNT(*) AS feature_request_count
+FROM
+    feature_requests
+WHERE
+    status = 'submitted' -- Adjust status based on your schema
+GROUP BY
+    month
+ORDER BY
+    month DESC;
+
+3. Product Usage Frequency - Average frequency with which users interact with the product.
+Assuming you have a user_interactions table with user_id and interaction_date columns, you can calculate the average frequency of interactions:
+
+WITH interactions_per_user AS (
+    SELECT
+        user_id,
+        COUNT(*) AS interaction_count
+    FROM
+        user_interactions
+    WHERE
+        interaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND CURRENT_DATE -- Adjust period
+    GROUP BY
+        user_id
+),
+average_interactions AS (
+    SELECT
+        AVG(interaction_count) AS avg_frequency
+    FROM
+        interactions_per_user
+)
+SELECT
+    avg_frequency
+FROM
+    average_interactions;
+
+Sales & Marketing Metrics
+
+1. Lead Conversion Rate - Percentage of leads converted into paying customers.
+Assuming you have a leads table with lead_id, status, and a customers table with customer_id and is_converted:
+
+WITH lead_counts AS (
+    SELECT
+        COUNT(*) AS total_leads
+    FROM
+        leads
+    WHERE
+        status = 'converted' -- or other criteria indicating lead has become a customer
+),
+converted_leads AS (
+    SELECT
+        COUNT(*) AS converted_leads
+    FROM
+        leads l
+    JOIN
+        customers c ON l.lead_id = c.lead_id
+    WHERE
+        c.is_converted = TRUE -- Assuming there's a flag indicating conversion
+)
+SELECT
+    (converted_leads * 1.0 / total_leads) * 100 AS lead_conversion_rate
+FROM
+    lead_counts, converted_leads;
+
+2. Sales Cycle Length - Average time taken to close a sale.
+Assuming you have a sales table with lead_id, sale_date, and lead_creation_date:
+
+WITH sales_cycle AS (
+    SELECT
+        sale_id,
+        DATE_PART('day', sale_date - lead_creation_date) AS cycle_length
+    FROM
+        sales
+    WHERE
+        sale_date IS NOT NULL
+)
+SELECT
+    AVG(cycle_length) AS average_sales_cycle_length
+FROM
+    sales_cycle;
+
+3. Customer Referral Rate - Percentage of new customers acquired through referrals.
+Assuming you have a referrals table with referrer_customer_id and referred_customer_id, and a customers table with customer_id and acquisition_date:
+
+WITH referred_customers AS (
+    SELECT
+        COUNT(DISTINCT referred_customer_id) AS referred_count
+    FROM
+        referrals
+    JOIN
+        customers c ON referrals.referred_customer_id = c.customer_id
+    WHERE
+        c.acquisition_date BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND CURRENT_DATE -- Adjust period as needed
+),
+total_new_customers AS (
+    SELECT
+        COUNT(DISTINCT customer_id) AS total_new_customers
+    FROM
+        customers
+    WHERE
+        acquisition_date BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND CURRENT_DATE -- Adjust period as needed
+)
+SELECT
+    (referred_count * 1.0 / total_new_customers) * 100 AS referral_rate
+FROM
+    referred_customers, total_new_customers;
+
+***
+1. Active Users Count To track the number of active users within a specific period:
+SELECT
+    COUNT(DISTINCT user_id) AS active_users
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE;
+2. Daily Active Users (DAU) To measure daily engagement by counting distinct users per day:
+SELECT
+    DATE(session_start_date) AS date,
+    COUNT(DISTINCT user_id) AS dau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    date
+ORDER BY
+    date;
+3. Weekly Active Users (WAU)
+To measure weekly engagement:
+SELECT
+    DATE_TRUNC('week', session_start_date) AS week_start,
+    COUNT(DISTINCT user_id) AS wau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    week_start
+ORDER BY
+    week_start;
+Here are some common SQL queries that are useful for SaaS businesses. These queries help with various aspects of monitoring and analyzing service performance, customer behavior, and financial metrics. Adjust table and column names as needed based on your specific schema.
+1. Active Users Count
+To track the number of active users within a specific period:
+sql
+Copy code
+SELECT
+    COUNT(DISTINCT user_id) AS active_users
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE;
+
+2. Daily Active Users (DAU)
+To measure daily engagement by counting distinct users per day:
+sql
+Copy code
+SELECT
+    DATE(session_start_date) AS date,
+    COUNT(DISTINCT user_id) AS dau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    date
+ORDER BY
+    date;
+
+3. Weekly Active Users (WAU)
+To measure weekly engagement:
+sql
+Copy code
+SELECT
+    DATE_TRUNC('week', session_start_date) AS week_start,
+    COUNT(DISTINCT user_id) AS wau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    week_start
+ORDER BY
+    week_start;
+
+4. Monthly Active Users (MAU)
+To measure monthly engagement:
+SELECT
+    DATE_TRUNC('month', session_start_date) AS month_start,
+    COUNT(DISTINCT user_id) AS mau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('year', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    month_start
+ORDER BY
+    month_start;
+5. Revenue by Product
+To break down revenue by product or service:
+SELECT
+    product_id,
+    SUM(revenue) AS total_revenue
+FROM
+    transactions
+WHERE
+    transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    product_id
+ORDER BY
+    total_revenue DESC;
+6. Revenue Growth Rate
+To calculate revenue growth rate compared to the previous period:
+WITH revenue_current AS (
+    SELECT
+        SUM(revenue) AS total_revenue
+    FROM
+        transactions
+    WHERE
+        transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+),
+revenue_previous AS (
+    SELECT
+        SUM(revenue) AS total_revenue
+    FROM
+        transactions
+    WHERE
+        transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day'
+)
+SELECT
+    (revenue_current.total_revenue - revenue_previous.total_revenue) / NULLIF(revenue_previous.total_revenue, 0) * 100 AS revenue_growth_rate
+FROM
+    revenue_current, revenue_previous;
+7. Customer Segmentation
+To analyze the distribution of customers by subscription plan:
+SELECT
+    subscription_plan,
+    COUNT(DISTINCT customer_id) AS customer_count
+FROM
+    subscriptions
+WHERE
+    subscription_start_date <= CURRENT_DATE
+GROUP BY
+    subscription_plan;
+8. Cost of Goods Sold (COGS)
+To calculate COGS for the period:
+SELECT
+    SUM(cogs) AS total_cogs
+FROM
+    transactions
+WHERE
+    transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE;
+***
+1. Active Users Count
+To track the number of active users within a specific period:
+sql
+Copy code
+SELECT
+    COUNT(DISTINCT user_id) AS active_users
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE;
+2. Daily Active Users (DAU)
+To measure daily engagement by counting distinct users per day:
+sql
+Copy code
+SELECT
+    DATE(session_start_date) AS date,
+    COUNT(DISTINCT user_id) AS dau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    date
+ORDER BY
+    date;
+3. Weekly Active Users (WAU)
+To measure weekly engagement:
+sql
+Copy code
+SELECT
+    DATE_TRUNC('week', session_start_date) AS week_start,
+    COUNT(DISTINCT user_id) AS wau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    week_start
+ORDER BY
+    week_start;
+4. Monthly Active Users (MAU)
+To measure monthly engagement:
+sql
+Copy code
+SELECT
+    DATE_TRUNC('month', session_start_date) AS month_start,
+    COUNT(DISTINCT user_id) AS mau
+FROM
+    user_sessions
+WHERE
+    session_start_date BETWEEN DATE_TRUNC('year', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    month_start
+ORDER BY
+    month_start;
+5. Revenue by Product
+To break down revenue by product or service:
+sql
+Copy code
+SELECT
+    product_id,
+    SUM(revenue) AS total_revenue
+FROM
+    transactions
+WHERE
+    transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+GROUP BY
+    product_id
+ORDER BY
+    total_revenue DESC;
+6. Revenue Growth Rate
+To calculate revenue growth rate compared to the previous period:
+sql
+Copy code
+WITH revenue_current AS (
+    SELECT
+        SUM(revenue) AS total_revenue
+    FROM
+        transactions
+    WHERE
+        transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE
+),
+revenue_previous AS (
+    SELECT
+        SUM(revenue) AS total_revenue
+    FROM
+        transactions
+    WHERE
+        transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') AND DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day'
+)
+SELECT
+    (revenue_current.total_revenue - revenue_previous.total_revenue) / NULLIF(revenue_previous.total_revenue, 0) * 100 AS revenue_growth_rate
+FROM
+    revenue_current, revenue_previous;
+7. Customer Segmentation
+To analyze the distribution of customers by subscription plan:
+sql
+Copy code
+SELECT
+    subscription_plan,
+    COUNT(DISTINCT customer_id) AS customer_count
+FROM
+    subscriptions
+WHERE
+    subscription_start_date <= CURRENT_DATE
+GROUP BY
+    subscription_plan;
+8. Cost of Goods Sold (COGS)
+To calculate COGS for the period:
+sql
+Copy code
+SELECT
+    SUM(cogs) AS total_cogs
+FROM
+    transactions
+WHERE
+    transaction_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE;
+9. Revenue per User (RPU) To calculate average revenue per user:
+WITH revenue_per_user AS (
+    SELECT
+        user_id,
+        SUM(revenue) AS total_revenue
+    FROM
+        transactions
+    GROUP BY
+        user_id
+)
+SELECT
+    AVG(total_revenue) AS avg_revenue_per_user
+FROM
+    revenue_per_user;
+10. Support Ticket Response Time
+To analyze average response time for support tickets:
+SELECT
+    AVG(EXTRACT(EPOCH FROM (response_time - request_time)) / 60) AS avg_response_time_minutes
+FROM
+    support_tickets
+WHERE
+    response_time IS NOT NULL
+    AND request_time BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE;
+11. Product Adoption Rate To measure the adoption rate of a new feature:
+WITH feature_adoption AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS adopters
+    FROM
+        feature_usage_logs
+    WHERE
+        feature_id = 'new_feature' -- Adjust based on feature_id
+),
+total_users AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS total
+    FROM
+        users
+)
+SELECT
+    (adopters * 1.0 / total) * 100 AS adoption_rate
+FROM
+    feature_adoption, total_users;
